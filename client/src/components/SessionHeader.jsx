@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useSession } from '../contexts/SessionContext';
+import SessionDetail from './SessionDetail';
 
 const API_URL = import.meta.env.DEV
   ? 'http://localhost:3001'
@@ -178,6 +179,10 @@ function SessionHeader() {
 }
 
 function PastSessionsModal({ sessions, loading, currentId, onClose }) {
+  // When set, the modal shows that session's detail view (stats +
+  // read-only message browser) instead of the list.
+  const [selected, setSelected] = useState(null);
+
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center"
@@ -185,7 +190,7 @@ function PastSessionsModal({ sessions, loading, currentId, onClose }) {
       onClick={onClose}
     >
       <div
-        className="w-full max-w-3xl max-h-[80vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        className="w-full max-w-3xl h-[80vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
         style={{ backgroundColor: 'var(--header-color)' }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -202,6 +207,9 @@ function PastSessionsModal({ sessions, loading, currentId, onClose }) {
           </button>
         </div>
 
+        {selected ? (
+          <SessionDetail session={selected} onBack={() => setSelected(null)} />
+        ) : (
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="p-8 text-center opacity-60" style={{ color: 'var(--text-color)' }}>
@@ -227,11 +235,15 @@ function PastSessionsModal({ sessions, loading, currentId, onClose }) {
                 {sessions.map((s) => (
                   <tr
                     key={s.id}
-                    className="border-b border-white/5 hover:bg-white/5"
+                    className="border-b border-white/5 hover:bg-white/5 cursor-pointer"
                     style={{ color: 'var(--text-color)' }}
+                    onClick={() => setSelected(s)}
+                    title="View report & messages"
                   >
                     <td className="px-4 py-2">
-                      {s.name}
+                      <span className="hover:underline" style={{ color: 'var(--accent-color)' }}>
+                        {s.name}
+                      </span>
                       {s.id === currentId && (
                         <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
                           current
@@ -250,6 +262,7 @@ function PastSessionsModal({ sessions, loading, currentId, onClose }) {
                         className="text-xs px-2 py-1 rounded hover:bg-white/10 transition-colors"
                         style={{ color: 'var(--accent-color)' }}
                         title="Download saved messages from this session"
+                        onClick={(e) => e.stopPropagation()}
                       >
                         CSV
                       </a>
@@ -260,6 +273,7 @@ function PastSessionsModal({ sessions, loading, currentId, onClose }) {
             </table>
           )}
         </div>
+        )}
       </div>
     </div>
   );
