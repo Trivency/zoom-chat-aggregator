@@ -39,12 +39,13 @@ export function validateZoomWebhook(req, res, next) {
     .update(message)
     .digest('hex');
 
-  // Constant-time comparison
+  // Constant-time comparison (timingSafeEqual throws on length
+  // mismatch, so check lengths first and treat mismatch as invalid)
   try {
-    const isValid = crypto.timingSafeEquals(
-      Buffer.from(signature),
-      Buffer.from(expectedSignature)
-    );
+    const presented = Buffer.from(signature);
+    const expected = Buffer.from(expectedSignature);
+    const isValid = presented.length === expected.length &&
+      crypto.timingSafeEqual(presented, expected);
 
     if (!isValid) {
       console.error('Invalid webhook signature');

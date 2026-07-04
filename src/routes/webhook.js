@@ -35,10 +35,11 @@ function validateWebhookSignature(req) {
     .update(message)
     .digest('hex');
 
-  return crypto.timingSafeEquals(
-    Buffer.from(signature),
-    Buffer.from(expectedSignature)
-  );
+  const presented = Buffer.from(signature);
+  const expected = Buffer.from(expectedSignature);
+  // timingSafeEqual throws on length mismatch — treat that as invalid.
+  if (presented.length !== expected.length) return false;
+  return crypto.timingSafeEqual(presented, expected);
 }
 
 /**
@@ -158,10 +159,35 @@ function handleRTMSStopped(payload, rtmsManager, messageAggregator) {
 }
 
 /**
+ * Shared signature gate for the Recall webhook routes. When
+ * RECALL_WEBHOOK_SECRET is set, requests must carry a valid Svix-style
+ * signature over the raw body. When it is NOT set: in production the
+ * request is refused outright (unsigned webhooks could inject chat or
+ * flip bot state), while local dev accepts with a warning so the routes
+ * stay testable without a secret.
+ */
+function enforceRecallSignature(req, logTag) {
+  const secret = process.env.RECALL_WEBHOOK_SECRET;
+  if (secret) {
+    const result = verifyRecallWebhook(req.headers, req.rawBody, secret);
+    if (!result.ok) {
+      console.warn(`${logTag} rejected: ${result.reason}`);
+      return { ok: false, status: 401, error: 'Invalid signature' };
+    }
+    return { ok: true };
+  }
+  if (process.env.NODE_ENV === 'production') {
+    console.error(`${logTag} RECALL_WEBHOOK_SECRET not set — refusing unsigned webhook in production. Set it in Railway env vars.`);
+    return { ok: false, status: 503, error: 'Webhook signature verification not configured' };
+  }
+  console.warn(`${logTag} RECALL_WEBHOOK_SECRET not set — accepting without verification (dev only; production refuses)`);
+  return { ok: true };
+}
+
+/**
  * Recall.ai realtime webhook — receives chat_message events for bots
- * dispatched via RecallBotManager. When RECALL_WEBHOOK_SECRET is set we
- * verify the Svix-style signature over the raw body; otherwise we accept
- * with a warning (dev convenience). We always return 200 on accepted
+ * dispatched via RecallBotManager. Signature policy: see
+ * enforceRecallSignature() above. We always return 200 on accepted
  * requests so Recall doesn't retry on our parsing bugs.
  */
 router.post('/recall/chat', (req, res) => {
@@ -170,16 +196,8 @@ router.post('/recall/chat', (req, res) => {
     return res.status(503).json({ error: 'Recall manager not initialized' });
   }
 
-  const secret = process.env.RECALL_WEBHOOK_SECRET;
-  if (secret) {
-    const result = verifyRecallWebhook(req.headers, req.rawBody, secret);
-    if (!result.ok) {
-      console.warn(`[Recall webhook] rejected: ${result.reason}`);
-      return res.status(401).json({ error: 'Invalid signature' });
-    }
-  } else {
-    console.warn('[Recall webhook] RECALL_WEBHOOK_SECRET not set — accepting without verification (set it in Railway env vars)');
-  }
+  const gate = enforceRecallSignature(req, '[Recall webhook]');
+  if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
 
   // Fire-and-forget — handler is async now (looks up org state) but the
   // 200 response shouldn't wait on the DB write or socket emit.
@@ -344,16 +362,8 @@ router.post('/recall/status', (req, res) => {
     return res.status(503).json({ error: 'Recall manager not initialized' });
   }
 
-  const secret = process.env.RECALL_WEBHOOK_SECRET;
-  if (secret) {
-    const result = verifyRecallWebhook(req.headers, req.rawBody, secret);
-    if (!result.ok) {
-      console.warn(`[Recall status webhook] rejected: ${result.reason}`);
-      return res.status(401).json({ error: 'Invalid signature' });
-    }
-  } else {
-    console.warn('[Recall status webhook] RECALL_WEBHOOK_SECRET not set — accepting without verification');
-  }
+  const gate = enforceRecallSignature(req, '[Recall status webhook]');
+  if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
 
   // Fire-and-forget — the handler is async but we don't need to block
   // the 200 response on the DB write.
