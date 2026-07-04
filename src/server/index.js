@@ -842,6 +842,13 @@ async function start() {
   trialEnforcer.db = db;
   stripeService.db = db;
 
+  // Reseed bot-routing maps from open bot_usage rows so inbound Recall
+  // webhooks keep routing after a restart/redeploy (bots stay live in
+  // Zoom while our in-memory maps would otherwise start empty).
+  if (useRecall && db) {
+    await recallBotManager.reseedFromDatabase();
+  }
+
   // Register Socket.io handlers now that `db` is available (the auth
   // middleware needs it on every handshake).
   setupSocketHandlers(io, { db, orgState });

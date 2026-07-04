@@ -328,6 +328,16 @@ ALTER TABLE organizations ADD COLUMN IF NOT EXISTS ai_match_threshold     REAL  
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS ai_cooldown_seconds    INTEGER NOT NULL DEFAULT 75;
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS ai_recurring_threshold INTEGER NOT NULL DEFAULT 3;
 
+-- Room/bot display fields on bot_usage. Written at dispatch time so the
+-- in-memory routing maps (RecallBotManager.botsByMeeting / meetingsByBot)
+-- can be reseeded from open rows after a process restart — without these
+-- a redeploy mid-event silently dropped inbound chat webhooks for bots
+-- that were still live in Zoom ("unknown bot — dropping message").
+ALTER TABLE bot_usage ADD COLUMN IF NOT EXISTS room_name  TEXT;
+ALTER TABLE bot_usage ADD COLUMN IF NOT EXISTS room_color TEXT;
+ALTER TABLE bot_usage ADD COLUMN IF NOT EXISTS bot_name   TEXT;
+CREATE INDEX IF NOT EXISTS idx_bot_usage_open ON bot_usage(left_at) WHERE left_at IS NULL;
+
 -- Per-org toggle for the third-party notetaker filter (Otter/Fireflies/…).
 -- Default TRUE = filter on (current behavior). An admin can turn it off
 -- per org in Settings. The NOTETAKER_FILTER_DISABLED env var is a global
