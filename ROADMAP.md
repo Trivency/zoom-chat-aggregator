@@ -280,6 +280,30 @@ browser). Click any row in Session menu → View Past Sessions to open it.
 - Closes the loop the old idea called out: past sessions were only
   readable via Postgres directly.
 
+### Production hardening sprint (July 2026)
+Top items from the July 2026 audit, now that real customers are live:
+- **Auth rate limiting** — per-IP limits on login/signup (20 & 10 per
+  15 min) and the email-sending routes (5 per 15 min). Hand-rolled
+  fixed-window middleware (`src/middleware/rateLimit.js`), 429 +
+  Retry-After. `trust proxy` set so req.ip is real behind Railway.
+- **Admin bootstrap guard** — claiming the `ryte-org` admin org now
+  requires the signup email to match `BOOTSTRAP_ADMIN_EMAIL`; unset =
+  nobody bootstraps (previously any first signup on an empty DB won
+  god-mode).
+- **CORS lockdown** — production only accepts cross-origin credentialed
+  requests from `APP_URL`/the custom domain (was: any origin reflected).
+- **Baseline security headers** — nosniff, frame-deny, referrer policy,
+  HSTS in production. (CSP deferred — needs its own pass against the
+  built client.)
+- **Graceful shutdown + crash handlers** — SIGTERM drains Socket.io +
+  pg pool (10s failsafe); uncaughtException exits loudly instead of
+  dying silently; `railway.json` gained `healthcheckPath: /health`.
+- **RTMS mock crash fixed** — connecting a meeting with Recall
+  unconfigured no longer TypeErrors the whole process ~3s later.
+- Note for the future multi-operator build: operator names can't
+  replace the bot's Zoom display name per message (Zoom limitation) —
+  do it as a "sign replies with operator name" text prefix instead.
+
 ### June 2026 logged fixes (shipped July 2026)
 The two pending fixes from the backend deep-dive are done:
 1. **Bot-routing maps reseed on startup** — `bot_usage` now stores

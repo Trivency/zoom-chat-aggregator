@@ -157,8 +157,13 @@ export class RTMSManager {
       'Feeling unstoppable right now'
     ];
 
-    // Send a message every 3-8 seconds
+    // Send a message every 3-8 seconds. Guard the aggregator on every
+    // tick: the fallback singleton in index.js is constructed without
+    // one, and an unguarded call here is an uncaught TypeError inside
+    // setInterval — which used to kill the whole process ~3s after
+    // connecting a meeting in mock mode.
     const interval = setInterval(() => {
+      if (!this.messageAggregator) return;
       const sender = sampleNames[Math.floor(Math.random() * sampleNames.length)];
       const content = sampleMessages[Math.floor(Math.random() * sampleMessages.length)];
 
@@ -175,6 +180,7 @@ export class RTMSManager {
 
     // Send initial welcome message
     setTimeout(() => {
+      if (!this.messageAggregator) return;
       this.messageAggregator.addMessage({
         sender: 'System',
         content: `Connected to ${roomName} (Mock Mode - Demo messages will appear)`,
