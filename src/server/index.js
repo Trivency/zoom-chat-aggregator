@@ -33,11 +33,27 @@ const __dirname = dirname(__filename);
 const app = express();
 const httpServer = createServer(app);
 
+// Railway terminates TLS at its proxy; trust exactly one hop so req.ip
+// is the real client address (rate limiting keys on it) and
+// secure-cookie detection works.
+app.set('trust proxy', 1);
+
+// Allowed browser origins. In production, cross-origin credentialed
+// requests are only accepted from the app's own domain(s) — previously
+// `origin: true` reflected ANY origin with credentials, leaving the
+// sameSite cookie flag as the only cross-site defense. Same-origin
+// requests (the served client, the Mac launcher's WKWebView) don't hit
+// CORS at all, so this only shuts out third-party sites.
+const CORS_ORIGINS = process.env.NODE_ENV === 'production'
+  ? [...new Set([
+      (process.env.APP_URL || '').replace(/\/$/, ''),
+      'https://zoomchat.ryteproductions.com',
+    ].filter(Boolean))]
+  : ['http://localhost:5173', 'http://localhost:3000'];
+
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.NODE_ENV === 'production'
-      ? true
-      : ['http://localhost:5173', 'http://localhost:3000'],
+    origin: CORS_ORIGINS,
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -82,11 +98,23 @@ app.set('io', io);
 
 // ---- Middleware ----
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production'
-    ? true
-    : ['http://localhost:5173', 'http://localhost:3000'],
+  origin: CORS_ORIGINS,
   credentials: true,
 }));
+
+// Baseline security headers (hand-rolled instead of helmet: no new
+// dependency, and no CSP — a content-security policy needs its own
+// pass against the built client before it can ship safely).
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
+  }
+  next();
+});
+
 app.use(cookieParser());
 app.use(express.json({
   verify: (req, _res, buf) => { req.rawBody = buf; },
@@ -877,6 +905,49 @@ async function start() {
     `);
   });
 }
+
+// ---- Process-level safety nets ----
+//
+// Railway sends SIGTERM before replacing the container on deploy: stop
+// the trial-enforcer tick, close Socket.io (which also closes the HTTP
+// server) so operators reconnect to the new container, and end the pg
+// pool so in-flight writes flush. Hard-exit fallback in case something
+// keeps the event loop alive.
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[shutdown] ${signal} received — draining`);
+  const failsafe = setTimeout(() => {
+    console.error('[shutdown] drain timed out after 10s — forcing exit');
+    process.exit(1);
+  }, 10_000);
+  failsafe.unref();
+  try {
+    trialEnforcer.stop?.();
+    await new Promise((resolve) => io.close(resolve));
+    await app.get('db')?.end?.().catch(() => {});
+    console.log('[shutdown] clean exit');
+    process.exit(0);
+  } catch (err) {
+    console.error('[shutdown] error while draining:', err);
+    process.exit(1);
+  }
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+// Last-resort handlers: log with context instead of dying silently.
+// Exit on uncaughtException (state is suspect; Railway restarts us) but
+// only log unhandled rejections — most here are lost webhook side-effects,
+// not corrupted state worth killing live operator sessions over.
+process.on('uncaughtException', (err) => {
+  console.error('[fatal] uncaughtException:', err);
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[fatal] unhandledRejection:', reason);
+});
 
 start().catch((err) => {
   console.error('Fatal startup error:', err);

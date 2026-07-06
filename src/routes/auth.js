@@ -14,6 +14,7 @@ import {
   sendVerificationEmail,
   sendPasswordResetEmail,
 } from '../auth/email.js';
+import { rateLimit } from '../middleware/rateLimit.js';
 
 /**
  * Auth routes — signup, login, logout, /me, email verification, password
@@ -26,7 +27,15 @@ import {
 export default function authRouter() {
   const router = Router();
 
-  router.post('/signup', async (req, res) => {
+  // Per-IP limits on the abusable endpoints: login/signup absorb
+  // credential stuffing + bcrypt CPU abuse; the email-sending routes
+  // cap outbound spam through Resend. Sized for humans mistyping, not
+  // to inconvenience a team behind one office IP (limits are per 15 min).
+  const loginLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, name: 'login' });
+  const signupLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, name: 'signup' });
+  const emailLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 5, name: 'auth-email' });
+
+  router.post('/signup', signupLimit, async (req, res) => {
     const db = req.app.get('db');
     if (!db) return res.status(503).json({ error: 'Auth requires the database to be configured.' });
 
@@ -48,21 +57,28 @@ export default function authRouter() {
       const orgId = crypto.randomUUID();
       const orgDisplayName = (orgName && String(orgName).trim()) || cleanEmail.split('@')[1] || 'My Organization';
 
-      // First signup with no users yet → bootstrap as RYTE admin if they're
-      // signing up against the existing ryte-org (no users attached yet).
-      // Otherwise, a new org is created on the trial plan.
-      const ryteOrgEmpty = await db.query(
-        `SELECT 1 FROM organizations o
-          WHERE o.id = 'ryte-org'
-            AND NOT EXISTS (SELECT 1 FROM users u WHERE u.org_id = o.id)`
-      );
+      // Bootstrap: claiming the RYTE admin org (no limits, no billing)
+      // requires BOTH that the org has no users yet AND that the signup
+      // email matches BOOTSTRAP_ADMIN_EMAIL. Previously any first signup
+      // on an empty DB won god-mode — on a fresh deploy that's a race
+      // anyone can enter. With the env var unset, nobody bootstraps and
+      // every signup gets a normal trial org.
+      const bootstrapEmail = (process.env.BOOTSTRAP_ADMIN_EMAIL || '').trim().toLowerCase();
+      let ryteOrgEmpty = { rows: [] };
+      if (bootstrapEmail && cleanEmail === bootstrapEmail) {
+        ryteOrgEmpty = await db.query(
+          `SELECT 1 FROM organizations o
+            WHERE o.id = 'ryte-org'
+              AND NOT EXISTS (SELECT 1 FROM users u WHERE u.org_id = o.id)`
+        );
+      }
 
       let finalOrgId;
       let finalRole;
       if (ryteOrgEmpty.rows.length > 0) {
-        // Bootstrap: first ever signup claims the RYTE admin org.
         finalOrgId = 'ryte-org';
         finalRole = 'admin';
+        console.log(`[auth] bootstrap: ${cleanEmail} claimed the ryte-org admin org`);
       } else {
         await db.query(
           `INSERT INTO organizations (id, name, plan_tier, concurrent_bot_limit, trial_minutes_remaining)
@@ -100,7 +116,7 @@ export default function authRouter() {
     }
   });
 
-  router.post('/login', async (req, res) => {
+  router.post('/login', loginLimit, async (req, res) => {
     const db = req.app.get('db');
     if (!db) return res.status(503).json({ error: 'Auth requires the database to be configured.' });
 
@@ -160,7 +176,7 @@ export default function authRouter() {
     return res.json({ ok: true });
   });
 
-  router.post('/resend-verification', async (req, res) => {
+  router.post('/resend-verification', emailLimit, async (req, res) => {
     const db = req.app.get('db');
     if (!db) return res.status(503).json({ error: 'Auth requires the database to be configured.' });
     if (!req.user) return res.status(401).json({ error: 'Sign in first.' });
@@ -170,7 +186,7 @@ export default function authRouter() {
     return res.json({ ok: true });
   });
 
-  router.post('/password-reset/request', async (req, res) => {
+  router.post('/password-reset/request', emailLimit, async (req, res) => {
     const db = req.app.get('db');
     if (!db) return res.status(503).json({ error: 'Auth requires the database to be configured.' });
     const { email } = req.body || {};
@@ -186,7 +202,7 @@ export default function authRouter() {
     return res.json({ ok: true });
   });
 
-  router.post('/password-reset/confirm', async (req, res) => {
+  router.post('/password-reset/confirm', loginLimit, async (req, res) => {
     const db = req.app.get('db');
     if (!db) return res.status(503).json({ error: 'Auth requires the database to be configured.' });
     const { token, password } = req.body || {};
