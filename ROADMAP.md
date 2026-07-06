@@ -265,6 +265,36 @@ answer is wrong/broken. Full reference: `docs/backend/ai.md`.
 - **Fast-follows (next):** suggested reply drafts + AI moderation triage,
   reusing the same `AIClient` + AI panel.
 
+### Session history — after-event report + past-session browser (July 2026)
+Was two "Future ideas" (per-session statistics; past-session message
+browser). Click any row in Session menu → View Past Sessions to open it.
+- `src/routes/sessionHistory.js` — `GET /api/sessions/:id/stats`
+  (headline totals, per-room breakdown, top chatters, 5-min-bucket
+  volume timeline) + `GET /api/sessions/:id/messages` (read-only page
+  through the full persisted chat log, `before`-cursor "Load older").
+  Org-scoped ownership check on both; requires the database.
+- `client/src/components/SessionDetail.jsx` — Overview tab (stat tiles,
+  volume chart, per-room bars in each room's color, top-chatters list)
+  + Messages tab (feed-style read-only browser with room pills and
+  reply/broadcast/auto-reply/saved markers).
+- Closes the loop the old idea called out: past sessions were only
+  readable via Postgres directly.
+
+### June 2026 logged fixes (shipped July 2026)
+The two pending fixes from the backend deep-dive are done:
+1. **Bot-routing maps reseed on startup** — `bot_usage` now stores
+   `room_name`/`room_color`/`bot_name` at dispatch;
+   `RecallBotManager.reseedFromDatabase()` rebuilds
+   `botsByMeeting`/`meetingsByBot` from open rows (bounded to 24h) at
+   boot, so a Railway redeploy mid-event no longer drops inbound chat
+   webhooks for live bots. Tests: `test/RecallBotManager.test.mjs`.
+2. **Recall webhook signatures enforced in production** — when
+   `RECALL_WEBHOOK_SECRET` is unset and `NODE_ENV=production`,
+   `/webhook/recall/*` now refuses requests (503) instead of
+   warn-and-accept. Dev keeps the no-secret convenience. Also fixed the
+   `crypto.timingSafeEquals` → `timingSafeEqual` typo in the Zoom
+   webhook paths (`webhook.js`, `webhookAuth.js`).
+
 ---
 
 ## ⏸️ Parked (intentionally deferred)
@@ -281,28 +311,13 @@ volume justifies it.
 
 ---
 
-## 🔧 Logged fixes (pending — do as their own separate commit)
+## 🔧 Logged fixes
 
-Surfaced by the June 2026 backend deep-dive (`docs/backend/`). Logged
-here on purpose; **not yet implemented** — to be done in a dedicated
-commit, separate from the panelist build and the docs commit.
-
-1. **Reseed bot-routing maps on startup.**
-   `src/recall/RecallBotManager.js:154` — `botsByMeeting` /
-   `meetingsByBot` are in-memory only. A Railway redeploy (or any
-   process restart) drops all active-bot tracking while the bots stay
-   live in Zoom, so their inbound chat webhooks get silently dropped
-   ("unknown bot — dropping message"). Fix: on boot, seed the maps from
-   open `bot_usage` rows (`left_at IS NULL`) so routing survives a
-   restart. This is the most likely thing to bite mid-event.
-
-2. **Confirm + enforce `RECALL_WEBHOOK_SECRET`.**
-   `src/routes/webhook.js:173-181` — when the secret is unset,
-   `/webhook/recall/chat` and `/webhook/recall/status` accept
-   unauthenticated POSTs and only log a warning, so anyone could inject
-   chat or manipulate bot state. Fix: verify it's actually set in
-   Railway production, and have the route refuse unsigned requests in
-   production (hard-fail) rather than warn-and-accept.
+Both June 2026 logged fixes shipped (see "June 2026 logged fixes"
+above). Remaining operational follow-up: **confirm
+`RECALL_WEBHOOK_SECRET` is actually set in Railway production** — the
+code now hard-fails without it, so an unset var means Recall webhooks
+get 503s until it's added.
 
 ## 💡 Future ideas (not committed to)
 
@@ -351,12 +366,6 @@ of org-wide. Required for "each operator moderates their own room
 independently" workflows. ~3-4 hrs. Not asked for yet — the studio
 host + remote moderators pattern works fine on org-wide state.
 
-### Past-session message browser (read in app)
-Currently you can list past sessions and download saved-message
-CSVs, but the full chat log of a past session is only viewable via
-Postgres directly. A read-only "load past session" view would close
-the loop.
-
 ### Multiple PNG export aspect ratios
 Quote card is 1:1 (Instagram feed). Could add 9:16 (stories),
 1.91:1 (Twitter), 16:9 (presentation slide). Picker in the PNG
@@ -366,11 +375,6 @@ button menu.
 Slack-style — small NSStatusBar icon showing whether a session is
 recording at a glance. Useful if operator runs other apps in the
 foreground.
-
-### Per-session statistics / after-event report
-Auto-generate printable summary at session end: messages by room,
-top contributors, message volume over time, saved highlights.
-Postgres has the data; just a query + render.
 
 ### "Hide cursor in showtime" toggle
 Single button in SessionHeader (or display view) to toggle cursor

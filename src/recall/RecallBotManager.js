@@ -168,6 +168,62 @@ export class RecallBotManager {
   }
 
   /**
+   * Reseed the in-memory routing maps from open bot_usage rows
+   * (left_at IS NULL). Called once at boot, after the DB is up: a
+   * process restart (Railway redeploy, crash) used to drop
+   * botsByMeeting/meetingsByBot while the actual Recall bots stayed
+   * live in Zoom, so their inbound chat webhooks were silently dropped
+   * ("unknown bot — dropping message"). ROADMAP logged fix #1.
+   *
+   * Bounded to the last 24h so rows that never got closed (missed
+   * terminal webhook long ago) don't resurrect as phantom bots —
+   * automatic_leave is capped at 4h, so any genuinely live bot is
+   * well inside the window.
+   */
+  async reseedFromDatabase() {
+    if (!this.db) return 0;
+    let rows;
+    try {
+      ({ rows } = await this.db.query(
+        `SELECT DISTINCT ON (meeting_id)
+                recall_bot_id, meeting_id, org_id, joined_at,
+                room_name, room_color, bot_name
+           FROM bot_usage
+          WHERE left_at IS NULL
+            AND org_id IS NOT NULL
+            AND meeting_id IS NOT NULL
+            AND joined_at > NOW() - INTERVAL '24 hours'
+          ORDER BY meeting_id, joined_at DESC`
+      ));
+    } catch (err) {
+      console.error('[Recall] reseedFromDatabase query failed:', err.message);
+      return 0;
+    }
+
+    let seeded = 0;
+    for (const row of rows) {
+      if (this.botsByMeeting.has(row.meeting_id)) continue; // live state wins
+      const botInfo = {
+        botId: row.recall_bot_id,
+        meetingId: row.meeting_id,
+        roomName: row.room_name || `Meeting ${row.meeting_id}`,
+        roomColor: row.room_color || '#ef4444',
+        botName: row.bot_name || 'Chat Bot',
+        connectedAt: row.joined_at,
+        orgId: row.org_id,
+        scheduledFor: null,
+      };
+      this.botsByMeeting.set(row.meeting_id, botInfo);
+      this.meetingsByBot.set(row.recall_bot_id, row.meeting_id);
+      seeded++;
+    }
+    if (seeded > 0) {
+      console.log(`[Recall] reseeded ${seeded} active bot(s) from bot_usage after restart`);
+    }
+    return seeded;
+  }
+
+  /**
    * Spawn a Recall bot for a meeting. The botName is what meeting
    * participants will see — it's operator-chosen per meeting (no
    * vendor-branded default) so customers can present the bot under
@@ -325,9 +381,10 @@ export class RecallBotManager {
         const entry = this.orgState?.peek(orgId);
         sessionId = entry?.sm?.current?.id ?? null;
         await this.db.query(
-          `INSERT INTO bot_usage (id, recall_bot_id, meeting_id, session_id, org_id, tenant_id)
-           VALUES ($1, $2, $3, $4, $5, COALESCE($5, 'ryteproductions'))`,
-          [randomUUID(), botId, meetingId, sessionId, orgId]
+          `INSERT INTO bot_usage (id, recall_bot_id, meeting_id, session_id, org_id, tenant_id,
+                                  room_name, room_color, bot_name)
+           VALUES ($1, $2, $3, $4, $5, COALESCE($5, 'ryteproductions'), $6, $7, $8)`,
+          [randomUUID(), botId, meetingId, sessionId, orgId, roomName, roomColor, cleanBotName]
         );
       } catch (err) {
         console.error('[Recall] bot_usage INSERT failed (bot still dispatched):', err.message);

@@ -11,6 +11,7 @@ import authRouter from '../routes/auth.js';
 import billingRouter from '../routes/billing.js';
 import invitationsRouter from '../routes/invitations.js';
 import presenterNotesRouter from '../routes/presenterNotes.js';
+import sessionHistoryRouter from '../routes/sessionHistory.js';
 import aiRouter from '../routes/ai.js';
 import { StripeService } from '../services/StripeService.js';
 import { AIClient } from '../services/AIClient.js';
@@ -160,6 +161,10 @@ app.use('/api/presenter-notes', presenterNotesRouter());
 // AI auto-responder — settings + FAQ CRUD. requireAuth applies (above);
 // settings PATCH is admin-gated inside the router.
 app.use('/api/ai', aiRouter());
+
+// Session history — per-session stats + read-only message browser.
+// Distinct paths from the /api/sessions handlers below, so no overlap.
+app.use('/api/sessions', sessionHistoryRouter());
 
 // Helper to grab the requesting user's org state on demand.
 async function org(req) {
@@ -841,6 +846,13 @@ async function start() {
   recallBotManager.orgState = orgState;
   trialEnforcer.db = db;
   stripeService.db = db;
+
+  // Reseed bot-routing maps from open bot_usage rows so inbound Recall
+  // webhooks keep routing after a restart/redeploy (bots stay live in
+  // Zoom while our in-memory maps would otherwise start empty).
+  if (useRecall && db) {
+    await recallBotManager.reseedFromDatabase();
+  }
 
   // Register Socket.io handlers now that `db` is available (the auth
   // middleware needs it on every handshake).
