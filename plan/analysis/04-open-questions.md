@@ -28,9 +28,17 @@
    default); (b) ZoomChat is absorbed as the studio's chat plane (kills a shipping product's
    independence); (c) both, with ZoomChat's capture/moderation core extracted as a library
    (highest cost). This decision gates all webinar-domain integration work.
-5. **Is DAW part of the suite or a separate venture?** Zero references in either direction today.
-   If it is intended as ShowEngine/webinar show-audio tooling, that changes its Wave-2 (Tauri)
-   priorities; if not, exclude it from suite architecture and let it evolve freely.
+5. **Is DAW part of the suite or a separate venture?** Zero code/doc references in either
+   direction, re-verified after Tony's 2026-07-08 update. The update makes the question sharper,
+   not moot: DAW now models an Avantis live console, treats Dante as an input device, and has a
+   cue-stack Show page — i.e. it is converging on live-event audio territory adjacent to
+   ShowEngine and the webinar studio, while remaining architecturally standalone. If it is
+   intended as suite show-audio tooling, that changes its Wave-2 (Tauri) priorities and it should
+   join the `suite-contracts` conversation early; if not, exclude it from suite architecture and
+   let it evolve freely.
+   Related: DAW's 13-commit update came from a single author (Tony Camposeo) with the repo's own
+   PROGRESS ground-truth left stale — worth clarifying whether DAW is inside the agency's
+   doc-driven process or a solo track.
 6. **Is ryte-live-translation a product or an event-services tool?** It has production polish in
    the operator console but no auth, no persistence, and committed keys. Productizing it means
    P1 work (auth, DB, multi-tenant); keeping it as an internal tool means locking it behind a

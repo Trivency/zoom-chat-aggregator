@@ -17,6 +17,9 @@
    Trivency copies exist and were used for this analysis. Two writable copies of an actively
    developed repo is how an agency team silently forks itself in week one. One decision, one
    archived mirror, done. (Business input needed — see 04.)
+   *Live evidence of this risk class*: on 2026-07-08 `Trivency/DAW` 404'd from git and the GitHub
+   API and dropped out of the account's repo list for a period spanning Tony's push, then
+   reappeared — a rename/transfer/visibility flip happening mid-collaboration, unannounced.
 3. **Get the QNet Portal codebase into git.** The dashboard serving a production customer (S7)
    exists only in Lovable; this repo set contains specs and SQL seeds for it, and the integration
    brief warns the live Supabase is already ahead of the last reviewed snapshot. Export/sync the
@@ -81,8 +84,10 @@
 13. **Test coverage is inverted relative to risk.** The hardware-facing repos are best-tested
     (Qnet- 23 test files; monitor has a CI-gated selftest); the audience-facing live products are
     worst (translation: zero tests; liveSalesEngine: smokes only, Vitest "locked" in docs but not
-    installed; DAW: zero). Minimum bar: contract tests against `suite-contracts` in every consumer,
-    plus restart/rehydration tests for the two live-show apps.
+    installed; DAW: zero test files — though its 2026-07-08 update added a runtime
+    `engine.selfTest()` that renders each insert through `OfflineAudioContext` and asserts audible
+    behavior, a good seed for a real test suite). Minimum bar: contract tests against
+    `suite-contracts` in every consumer, plus restart/rehydration tests for the two live-show apps.
 14. **Single-replica in-memory state is a suite-wide pattern** (aggregator ring buffers +
     unevicted `OrgState`, ShowEngine module-level Maps, translation Maps, bus retained map,
     Qnet- DeviceManager). It is the right pattern for appliance/studio boxes; it is a scaling
@@ -91,9 +96,11 @@
 15. **Contract-doc drift is already happening inside single repos** (ShowEngine's WS doc omits 5
     implemented events; monitor's VERSIONS vs CLOUD_HANDOFF disagree on discovery-ingest status;
     Qnet- MIGRATION claims no `dmwebster` remnants while docker-compose still points at
-    `ghcr.io/dmwebster/qnet`). The doc-driven method needs its "docs are memory" rule enforced by
-    review checklists once multiple builders are active — stale docs are worse than no docs for
-    an agency team that trusts them.
+    `ghcr.io/dmwebster/qnet`; and as of the 2026-07-08 DAW push, DAW's `PROGRESS.md` — its
+    self-declared ground truth — still marks SC.2 "not started" and describes the deleted
+    `Track.effects` path as current, while the code ships both). The doc-driven method needs its
+    "docs are memory" rule enforced by review checklists once multiple builders are active —
+    stale docs are worse than no docs for an agency team that trusts them.
 16. **Gaps — capabilities the suite needs that no repo provides today:**
     - **Show-control glue**: OSC/timeline control is planned in webinar-stack (Plane 5) and absent
       everywhere else; nothing today can cue "start game / play video / change scene / recall

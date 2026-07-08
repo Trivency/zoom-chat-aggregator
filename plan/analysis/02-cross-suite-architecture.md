@@ -191,8 +191,15 @@ Recommended model, building only on proven pieces:
   including the webinar studio, with zero code coupling — that is a feature, keep it).
 - **ryte-live-translation** — standalone today; natural future feed into webinar-stack
   (translated audio as a studio source), but nothing in code assumes it.
-- **DAW** — fully standalone; no reference in either direction. Treat as out of the integration
-  plan until a concrete use (e.g. show audio playback for ShowEngine) is decided
+- **DAW** — fully standalone; no reference in either direction (re-verified after the 2026-07-08
+  update: grep for suite names still returns zero hits). The update strengthens its *conceptual*
+  adjacency to the AV domain — it now models an Allen & Heath **Avantis** console strip and treats
+  **Dante** as a normal multichannel input device (via DVS) — but that is hardware modeling, not
+  integration intent. Its new `plan/03-BUILD-CONTRACT.md` also locks a strict UI → state-store →
+  engine layering ("a control never changes its own state"; "swapping to a native backend later =
+  zero UI changes"), which is the same single-authoritative-state house pattern the rest of the
+  suite converged on — good news for any future integration, but still: treat as out of the
+  integration plan until a concrete use (e.g. show audio playback for ShowEngine) is decided
   (04-open-questions).
 
 ### Recommended communication pattern per connection [recommendation]

@@ -21,7 +21,7 @@
 | 2 | `webinar-stack` | TS (Node 22 workspaces) + C++20/Obj-C++ (Metal, Zoom SDK) | "Webinar AI Studio" — remote-operated Zoom broadcast studio on a Mac Studio; contracts/bus/cloud/console + native engine | Webinar | Phase-0 foundation real; AV engine is a build-ready spike; rest planned |
 | 3 | `liveSalesEngine` | TS (shared/server/web), Svelte 5, Drizzle/Postgres | "ShowEngine" — real-time live-selling game engine; operator/tv/obs surfaces, one authoritative server state | Show management | V1 live with a paying beta customer; v1.1 in progress |
 | 4 | `ryte-live-translation` | TS (Fastify API, Next.js 14 web, shared pkg) | Live event translation: Deepgram STT → DeepL → Claude improve → ElevenLabs TTS → attendee phones over WS (LiveKit dormant) | Show management | Advanced prototype; no auth, no DB, no tests; **live secrets committed** |
-| 5 | `DAW` | TS (React 18 + Vite, client-only) | Web-first digital audio workstation (Mix/Build/Run); Wave 2 = Tauri + VST3 | Show management (audio tooling) — standalone today | Prototype; no persistence/tests; zero suite references |
+| 5 | `DAW` | TS (React 18 + Vite, client-only) | Web-first digital audio workstation (Mix/Build/Run); Avantis-style live console + sub-mix bus routing; Wave 2 = Tauri + VST3 | Show management (audio tooling) — standalone today | Prototype maturing fast (2026-07-08 push: strip drives the real audio graph, AudioWorklet expander, device selection, locked Build Contract); still no persistence/tests; zero suite references |
 | 6 | `Qnet-` (`qnet-control`) | TS (Node 22, no framework), JSON-file store | QNet — software replacement for a Crestron control processor: 57 drivers, discovery, CIP bridge, role-aware web touch panels, portal bridge | Integrated AV control | Beta; protocol-audited but largely not hardware-verified |
 | 7 | `qnet-monitor` | Python 3.12 (stdlib agent) + SQL seeds + specs | QNet Portal — read-only AV facility monitoring; ~20 protocol readers; dashboard lives in a separate Lovable/Supabase app (not in git here) | Integrated AV control | **In production** (AdventHealth Studio 7, ~216 devices); live agent 1.1.0 vs repo 1.4.0 |
 | 8 | `Manufacturer-Database` | JSON + JSON Schema (data only) | AV device protocol DB: 80 manufacturers, 608 devices, 1,426 protocol entries with wire-level example commands | Integrated AV control (shared asset) | V1 substantially complete; no validation CI; no programmatic consumer |
@@ -44,6 +44,11 @@
    (`docs/reference/`), Studio-7 room names hardcoded in discovery heuristics, and the full S7
    deployment as `examples/studio7/`; `qnet-monitor` is the real S7 deployment transferred as-is.
 6. **No submodules anywhere**; cross-repo reuse is by convention or copy-paste only.
+6a. **Repo availability churn observed live**: on 2026-07-08, `Trivency/DAW` returned 404 from both
+   git and the GitHub API and vanished from the account's repository list for a period spanning
+   Tony's push (~20:20 UTC), then reappeared. Cause unknown from this side (rename/transfer and
+   back, or visibility change). Same provenance-risk class as flag 1; noted in
+   03-risks-and-recommendations P0 #2.
 7. `zoom-chat-aggregator` is the "chat aggregator" that `webinar-stack` plans to fold in — webinar-stack
    references it only as `~/Dev/chat-aggregator` (path on Theo's machine), and the aggregator itself
    contains zero references back.

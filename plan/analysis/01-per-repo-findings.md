@@ -1,9 +1,6 @@
 # 01 — Per-Repo Findings (Phase 1 Deep Reads)
 
-> Produced 2026-07-08 by the AV-suite architecture analysis session. Each section is a
-> read-only deep read of one repo at its then-current HEAD (shallow clones under /workspace/,
-> zoom-chat-aggregator at its local checkout). All claims carry file:line citations into the
-> repo they describe. Low-confidence items are flagged inline by each report.
+> Produced 2026-07-08 by the AV-suite architecture analysis session; **DAW section updated same day to HEAD `a9520e2` after Tony Camposeo's 13-commit push.** Each section is a read-only deep read of one repo at its then-current HEAD (shallow clones under /workspace/, zoom-chat-aggregator at its local checkout). All claims carry file:line citations into the repo they describe. Low-confidence items are flagged inline by each report.
 >
 > Repos with no deep read: **qnet-dist-** (a single README; installer/release distribution shell for QNet — no source to analyze) and **agency-agents** (public fork of msitarzewski/agency-agents, a community AI-agent roster used for team process, not a product).
 
@@ -461,90 +458,80 @@ Capture → playback:
 
 ---
 
-The target is `/workspace/daw` (not the cwd). Let me explore it thoroughly.
-Let me read the config files, docs, and the audio engine in parallel.
-Now the audio engine, effects, state, and types.
-Now the pages, App, and plan docs.
-Now the plan docs and remaining components (to gauge implementation depth and Trivency references).
-Let me check remaining components, CONVENTIONS, and grep for persistence, export, and Trivency-suite references.
-No suite references found in the daw repo. Let me quickly confirm no tests exist and check the file-upload wiring in ChannelStrip.
-I have enough to compile the report. Let me quickly confirm ChannelStrip's playback wiring and the shallow git history.
-I have a complete picture. Here is the deep-read.
+> **Note:** This section supersedes the original DAW deep read done at commit `d89e467` earlier on 2026-07-08. Tony Camposeo pushed 13 commits (`d89e467..a9520e2`, +3,201/−446) the same day; the report below re-verifies every prior finding against the new HEAD and documents the new capabilities.
+
+I have a complete picture. Here is the updated architecture report.
 
 ---
 
-# `/workspace/daw` — Architecture Deep-Read (read-only)
+# DAW — Updated Architecture Report (HEAD `a9520e2`, prior read `d89e467`)
 
-Web-first DAW, working name "DAW" (SPECTRE rename deferred). Three-page model: Mix / Build / Run ("Show"). React 18 + Vite, **no backend**. All paths absolute below.
+Single author across all 13 new commits: **Tony Camposeo** `<tonycamposeo@Tonys-MacBook-Air-2.local>` (`git log --format='%an %ae' d89e467..HEAD`). "Tony" is the sole developer — **no multi-dev evidence**; the local machine hostname is the only signal. Stack unchanged: React 18 + Vite 6 + TS, zero runtime deps beyond react/react-dom (`package.json`), client-only, deploys via `vite preview` on Railway.
 
-## 1. Languages / frameworks / runtimes + versions
-- **React 18 + TypeScript (strict) + Vite**, ESM (`"type": "module"`). `/workspace/daw/package.json:13-23`:
-  - `react` ^18.3.1, `react-dom` ^18.3.1 (only two runtime deps — deliberately lean).
-  - dev: `typescript` ^5.6.3, `vite` ^6.0.3, `@vitejs/plugin-react` ^4.3.4, `@types/react(-dom)` ^18.3.x.
-- **Node 22** pinned: `/workspace/daw/.nvmrc:1`.
-- **TS config** `/workspace/daw/tsconfig.json`: target ES2020; `module`/`moduleResolution` ESNext/bundler; `jsx: react-jsx`; `noEmit`; `strict:true` + `noUnusedLocals`/`noUnusedParameters`/`noFallthroughCasesInSwitch` (line 16-19). No path aliases.
-- Entry: `/workspace/daw/index.html:11` → `/src/main.tsx`. Standard `createRoot` mount expected (main.tsx present, not separately read).
+## What changed since d89e467 (the 13 commits)
+1. **`1e8999d` SC.1** — real master meter + transport test tone; adopts the Build Contract.
+2. **`7588d3d`** — FUI/HUD theme toggle (`state/theme.ts`, localStorage).
+3. **`462982c`** — Show page rebuilt: file-only cue stack + Avantis live console + channel editor.
+4. **`97c87c6` SC.2** — **channel inserts now process real audio**; `effects.ts` deleted, `inserts.ts` added.
+5. **`d5655e4`** — "see==hear": one analyser on `channelOut`, smoothed params.
+6. **`529dfba`** — draggable EQ/Comp/Expander graph handles + pinch-to-Q (`EqGraph`/`DynGraph`, +160/+163 lines).
+7. **`f9bd847`–`450c85c` Routing slices 1-4** — sub-mix buses in model+engine; drag-reorder channels on Mix; editable color/number chip; Routing bracket tab on the Show console.
+8. **`8ce81fa`–`a9520e2`** — Mix strip "Move" tab UI iterations.
 
-## 2. Build tooling + deploy
-- Scripts `/workspace/daw/package.json:7-12`: `dev`=vite; `build`=`tsc -b && vite build`; `preview`; `start`=`vite preview --host 0.0.0.0 --port ${PORT:-4173}`.
-- `/workspace/daw/vite.config.ts`: react plugin; `server.host:true`; `preview.host:true`, `preview.allowedHosts:true` (comment lines 11-13 explain this is for Railway's assigned hostname).
-- **Deploy = Railway / Nixpacks**, `/workspace/daw/railway.json`: builder NIXPACKS, `startCommand: npm start`, restart ON_FAILURE max 10. **No Dockerfile.** README (`/workspace/daw/README.md:34-38`) confirms Railway serves the *built web app only* (not audio). PROGRESS notes the live Railway deploy is **still unconfirmed** (`/workspace/daw/plan/PROGRESS.md:83-85`).
-- Local dev launch config `/workspace/daw/.claude/launch.json` (nvm + `npm run dev` on :5173).
+Net: `+3201 / −446` across 27 files; `effects.ts` gone, five new files (`inserts.ts`, `expanderWorklet.ts`, `devices.ts`, `theme.ts`, plus components `ChannelChip/ChannelEditor/LiveChannelStrip/MasterMeter/RoutingView`), one new doc (`plan/03-BUILD-CONTRACT.md`).
 
-## 3. Audio engine (Web Audio API)
-Single source of truth: `/workspace/daw/src/audio/engine.ts` (391 lines) + `/workspace/daw/src/audio/effects.ts`. **Discipline enforced**: only `src/audio/` creates/wires nodes (CONVENTIONS `/workspace/daw/plan/CONVENTIONS.md:24-27`).
+## Verifying the 7 prior (potentially stale) findings
 
-- **Singleton** `engine` `/workspace/daw/src/audio/engine.ts:390`. Lazy `AudioContext` created after user gesture via `ensureStarted()` (:171-183); one master `GainNode`(0.9) → masterAnalyser + destination (:175-179). "Start engine" button drives it: `/workspace/daw/src/App.tsx:20-23,47-49`.
-- **Per-track chain** `class TrackChain` (:26-161). Signal flow (:5-8):
-  `source → [Gain] → [EQ] → [Compression] → [Saturation] → fader → master → dest`.
-  - **Gain**: `GainNode`, `dbToGain` `/workspace/daw/src/audio/effects.ts:10-16`.
-  - **EQ**: three chained biquads lowshelf(120Hz)→peaking(Q1)→highshelf(8k), `createEq`/`applyEq` `effects.ts:25-48`.
-  - **Compression**: native `DynamicsCompressorNode`, knee hardcoded 6 `effects.ts:50-56`.
-  - **Saturation**: `WaveShaperNode`, soft-clip curve `k=(drive/100)*100`, 1024 samples, `oversample:"2x"` `effects.ts:62-78`.
-- **Bypass by rewiring** (crown-jewel pattern): `rewire()` `engine.ts:69-94` disconnects all then relinks only `enabled` stages; disabled stages skipped so all-off = true pass-through. Analyser tap re-established each rewire (:93). `fftSize` 1024, smoothing 0.8 (:45-46).
-- **Live input**: `startLive()` `engine.ts:280-290` calls `navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}})` → `MediaStreamAudioSourceNode`. `stopLive` stops tracks (:144-153). **Single-device, mono-ish; no `enumerateDevices`, no channel/device selection yet** (that's S1.2 — `AVAILABLE_INPUTS` in types is a 16-entry placeholder, `types.ts:99-102`).
-- **File playback**: `loadFile` decodes ArrayBuffer via `decodeAudioData`, caches `AudioBuffer` in `buffers` map (:261-267); `playFile`/`playBuffer` (:113-121, 269-274). Upload wired in UI: `/workspace/daw/src/components/ChannelStrip.tsx:31-37,151` (`<input type=file accept=audio/*>` → `engine.loadFile` → stores `fileName`+`duration`).
-- **Metering**: `getMasterAnalyser`/`getTrackAnalyser` expose `AnalyserNode`s (:186-193); consumed by `SignalIndicator`, `Rta`, `LevelMeter`, `IoOverviewPage` SignalDot (RMS>threshold → "live" dot, `/workspace/daw/src/pages/IoOverviewPage.tsx:98-131`).
-- **Waveforms**: `getPeaks(id,buckets,startSec,durSec)` downsamples channel 0 to peak buckets `engine.ts:200-228`; drawn on canvas in BuildPage `Waveform` (:706-756).
-- **Build transport**: `playArrangement(clips, fromSec)` `engine.ts:313-370` — schedules per-clip `AudioBufferSourceNode` with `playbackRate = sourceLen/duration` (varispeed), equal-power sin/cos fade curves to true silence (:329-335, 357-364); `stopArrangement` (:372-386). Driven by BuildPage transport (`/workspace/daw/src/pages/BuildPage.tsx:237-256`, rAF playhead).
-- **Export / bounce path: NOT implemented.** Planned via `OfflineAudioContext` (`/workspace/daw/plan/01-ARCHITECTURE.md:56`, CONVENTIONS `:44`); the "Bounce → new track" button is hard-`disabled` (`/workspace/daw/src/pages/BuildPage.tsx:499-501`). No `OfflineAudioContext` occurrences in `src/` (grep confirms only docs mention it). No recording (`MediaRecorder`) either.
+**1. "Dual effect models; strip UI doesn't touch audio" — NOW FALSE (fixed).**
+The strip (`Track.strip`) is now the single source of truth for the audio graph. `engine.ts:14` comment: "The strip model (track.strip) is the single source of truth for the graph." Per-channel signal flow (`engine.ts:1-14`, `TrackChain`): `sources → channelIn (gain/pad/polarity) → [EQ→Comp→Expander in strip.order, enabled-only] → fader → pan → channelOut → (bus|master)`. `applyStrip()` (`engine.ts:138-150`) pushes `strip.eq/comp/expander/gain/pan` into real nodes; `rebuildChain()` (`engine.ts:106-124`) splices only enabled inserts — **bypass = true removal from the path**. The old `Track.effects` path and `effects.ts` are **deleted** (`ls src/audio` shows only `devices/engine/expanderWorklet/inserts`). Inspector/ChannelEditor edit via `updateStrip → updateTrack → engine.syncTrack → chain.sync` (`session.ts:124-129, 91-96, 420-426`). A headless `selfTest()` (`engine.ts:619-706`) renders each insert through `OfflineAudioContext` and asserts `boostedLouder / reduced / gated`. Confirmed: strip drives real Web Audio nodes; single chain.
 
-## 4. Data layer / persistence
-- **NONE.** No `localStorage`, `IndexedDB`, `sessionStorage`, or file save/load anywhere in `src/` (grep across repo returns only plan/doc mentions). 
-- Session state is **in-memory only**: `/workspace/daw/src/state/session.ts` — a hand-rolled observable store (`state` object + `listeners` Set + `emit`/`setState`/`subscribe`/`getSnapshot`) consumed via `useSyncExternalStore` (:24-49, 133-143). No Redux/Zustand (CONVENTIONS forbids, `:7`).
-- Build page **layers/clips are local React state** in `BuildPage`, not even in the session store (`/workspace/daw/src/pages/BuildPage.tsx:75-77`; PROGRESS confirms `:132`). Run page cues are derived on the fly from tracks, not persisted (`/workspace/daw/src/pages/RunPage.tsx:20-24`).
-- Persistence (versioned JSON w/ `schemaVersion`, localStorage-first) is **planned S0.3/S4.1**, unstarted (`/workspace/daw/plan/02-SESSION-SPLIT-STRATEGY.md:26-30,92-94`; open question localStorage-vs-file `/workspace/daw/plan/PROGRESS.md:149`). IDs are ephemeral `t{timestamp}-{counter}` (`session.ts:45-49`).
+**2. "Run page non-functional mockup" — PARTIALLY FIXED.**
+`RunPage.tsx` left pane is now **real**: `LiveChannelStrip` shows live per-channel meters (`engine.getTrackAnalyser`, `LiveChannelStrip.tsx:138`), live faders/solo/mute writing real state, editable names; clicking opens `ChannelEditor` (`ChannelEditor.tsx`) which edits the full Avantis-style strip (preamp/PEQ/gate/comp/output) against real strip state. A Console/Routing tab toggle embeds `RoutingView` (`RunPage.tsx:38,106-108`). **BUT cue firing is still cosmetic**: cues are derived read-only from non-live tracks (`RunPage.tsx:31-33`), `GO` only advances a local `standby` index (`RunPage.tsx:43-46`), `ALL STOP` just unmutes live tracks (`RunPage.tsx:47-50`) — no audio is fired/faded. `types.ts:143` and code comments defer real firing to SC.7. So: console+routing real; cue engine still a stub.
 
-## 5. API surface / server hooks
-- **Fully client-side. Confirmed.** No `fetch`, no server, no auth, no env vars, no API routes anywhere in `src/`. Railway only static-serves the Vite build via `vite preview`. Explicit non-goal: no accounts/auth/billing in Wave 1 (`/workspace/daw/plan/00-MASTER-PLAN.md:57-61`, CLAUDE.md `:37`). The only external I/O is browser `getUserMedia` + local file upload.
+**3. "No persistence" — STILL TRUE for sessions.** Only new localStorage is **theme** (`theme.ts:7,15,44`, key `daw-theme`). No session/track persistence; store is in-memory (`session.ts:25-31`). Build Contract explicitly defers undo/save-load (`03-BUILD-CONTRACT.md:53-55`; PROGRESS S4.1 not started).
 
-## 6. State of code: prototype vs hardened
-- **Prototype / design-forward.** ~3,121 LOC of TS/TSX across 22 files.
-- **Tests: NONE** (no `*.test`/`*.spec`, no vitest/jest — grep + config confirm). Quality gate is manual: "`npm run build` clean + verify in browser" (`/workspace/daw/plan/CONVENTIONS.md:55-58`). TS strict is the main safety net.
-- **Implemented vs planned** (per `/workspace/daw/plan/PROGRESS.md:9-38` status board vs actual `src/`):
-  - **Engine core**: real & working (Gain/EQ/Comp/Sat + bypass-rewire + live + file playback + arrangement playback). Missing: metering-on-strips wiring, multichannel capture, recording, bounce.
-  - **Mix**: heavily built visually (SD.1–SD.7 all ✅). BUT a **critical gap**: the elaborate modeled channel-strip (`Track.strip`: SSL-style 8-band EQ+HPF/LPF, Waves C1 comp, expander, 6 insert slots, reorderable chain) is **UI-only — does NOT touch the audio graph**. Audio still runs through the *separate* `Track.effects` path, which is **bypassed by default** (`defaultEffects` all `enabled:false`, `/workspace/daw/src/types.ts:190-203`). Two parallel effect models coexist; unifying them is deferred (PROGRESS `:54-57,165-166`; types comment `:74-77`). Analysers ARE live.
-  - **Build**: timeline is genuinely functional (SB.1/SB.2 ✅) — drag clips, layers, zoom, fade/crossfade/cut/trim/stretch varispeed, spacebar/playhead transport, live waveforms. Only **Bounce** missing.
-  - **Run/Show**: **concept layout only.** 8-ch console (faders/mute/solo local state), QLab cue stack with GO advancing a `standby` index + ALL STOP — but **no real cue firing/audio** (RunPage `:29-36`; cue engine is S3.2/S3.3, unstarted). Solo is dead UI state (`:71-75`).
-  - Cross-cutting S4 (save/load, hardwire bypass) and Wave 2 entirely unstarted.
-- **Git**: single squashed commit `d89e467` on `main`, no branches/tags (despite the rich multi-session decisions log — history was flattened; **flag**: PROGRESS narrative far exceeds git evidence). No CI (`.github/` absent in daw; the one at repo root belongs to a different project).
+**4. "Bounce/export not implemented" — STILL TRUE.** `OfflineAudioContext` appears **only in `selfTest()`** (`engine.ts:631,635`), not for export. The Build "Bounce → new track" button is `disabled` (`BuildPage.tsx:499-500`). SC.6 not started.
 
-## 7. Docs inventory
-- `/workspace/daw/CLAUDE.md` — orientation + locked decisions; mandates read-order and "audio graph is the crown jewel."
-- `/workspace/daw/docs/ARCHITECTURE.md` — **superseded** (banner line 3-5), historical.
-- `/workspace/daw/plan/` (canonical): `00-MASTER-PLAN.md` (locked stack/decisions/phases 0-5+Wave2), `01-ARCHITECTURE.md` (layering law "UI→state→engine→nodes", entities, signal flow), `02-SESSION-SPLIT-STRATEGY.md` (S0.1–S5.1 session gates), `CONVENTIONS.md` (frozen stack/naming/discipline), `PROGRESS.md` (living tracker — declared ground-truth over chat).
-- **Two-wave plan** (CLAUDE.md `:27-40`, MASTER-PLAN `:24-53`): **Wave 1** = this web app (Web Audio, Railway). **Wave 2** = wrap same React/TS UI in **Tauri + Rust real-time core** (`cpal`, `symphonia`), adding VST3/AU plugin hosting, low-latency multichannel I/O, Dante-as-device (via Dante Virtual Soundcard, no SDK). `src-tauri/` to be added later; `src/` reused unchanged. Honest constraints doc explicitly rules out "same code as Pro Tools", browser VST3/AU, AAX/UAD-2, direct Dante SDK (docs/ARCHITECTURE.md `:32-51`).
+**5. "No device selection" — NOW FIXED (real).** `devices.ts` (new) provides `useInputDevices()` hook + `deviceLabel()`; `engine.listInputDevices()` filters `enumerateDevices()` to `audioinput` (`engine.ts:494-499`), `ensureInputPermission()` prompts once for labels (`engine.ts:485-492`), and `startLive(track)` opens `getUserMedia` with `{ deviceId: exact }` and AGC/NS/echo all off (`engine.ts:502-514`). Reacts to `devicechange` events (`devices.ts:21-27`). Multichannel capture is still single-stream/best-effort (deferred to Wave 2).
 
-## 8. Trivency-suite integration (ShowEngine / webinar-stack / QNet)
-- **No references whatsoever.** Grep for `Trivency|ShowEngine|QNet|webinar|Game Audio` across the daw repo → **zero hits.** No cross-imports, no shared packages, no monorepo wiring. `package.json` has no `@trivency`/workspace deps.
-- The other suite apps (`livesalesengine`, `webinar-stack`, `qnet-*`, etc.) merely live as **sibling directories under `/workspace/`** — coincidental colocation, not a dependency.
-- **Conclusion: this DAW is standalone.** Nothing in code or docs positions it as part of the Trivency suite or as an integration target for ShowEngine/webinar/QNet audio. (Low-confidence caveat: the QLab-style cue/show model is *conceptually* adjacent to show-control tooling, but there is no stated or coded linkage.)
+**6. "No tests" — STILL TRUE.** No `*.test.*`/`*.spec.*` files, no vitest/jest in `package.json`. The only verification is the runtime `engine.selfTest()` exposed on `window.__engine` in dev (`main.tsx:8-10`).
 
-## Notable flags / risks
-- **Dual effect models** (wired-but-bypassed `Track.effects` vs UI-only `Track.strip`) is the biggest architectural debt — the impressive Mix UI produces **no audible processing** today (`/workspace/daw/src/types.ts:74-77`, PROGRESS `:54-57`).
-- Run page is a **non-functional mockup** (no cue audio).
-- No persistence, no tests, no bounce/export, single-commit history — consistent with an early, doc-heavy prototype.
-- `setVolume`/`setMuted` interaction (`engine.ts:102-109`) restores fader to `1` when unmuting if stored value was 0 — minor latent bug (low confidence, edge case).
+**7. "Standalone, zero suite references" — STILL TRUE.** Grep for `trivency|showengine|qnet|webinar|livesales|ryte` = **no hits** in code or docs, despite the repo sitting in `/workspace` beside those sibling projects. The only external-name references are **hardware/protocol modeling, not integration**: **Avantis** = Allen & Heath live console, cited as a UI/character model (`LiveChannelStrip.tsx:9`, `ChannelEditor.tsx:12`); **Dante** = treated as "a normal multi-channel audio device via DVS" (`engine.ts:494`, `devices.ts:5`, `CLAUDE.md:40-41`, plan docs). No suite positioning or integration intent anywhere.
+
+## New capabilities (with citations)
+
+**Sub-mix buses / routing (slices 1-4).**
+- Model: `Bus { id, number, name, color }` + `Track.busId?` (`types.ts:20-31`); `BUS_COLORS` console palette (`types.ts:34-37`). Unset `busId` = direct to Main.
+- State: `buses[]` in `SessionState` (`session.ts:19`); `addBus/updateBus/removeBus/assignTrackToBus` (`session.ts:133-163`); `removeBus` reroutes orphaned channels to Main before dropping the node (`session.ts:150-158`).
+- Engine summing: `buses: Map<string, GainNode>` (`engine.ts:264`); `ensureBus()` creates a summing GainNode wired to master (`engine.ts:429-437`); `syncTrack` calls `chain.setDestination(bus | master)` (`engine.ts:425`); `setDestination` reroutes `channelOut` while leaving the analyser tap intact (`engine.ts:82-91`). Two-level sum: `channelOut → bus → master`.
+- UI: `RoutingView.tsx` playoff-bracket view — bus cards + a "Direct → Main" card on the left, SVG bezier connectors converging to a single MAIN node (`RoutingView.tsx:108-183`); HTML5 drag-drop reassigns `busId`. `ChannelChip.tsx` = the editable color/number chip reused across pages (route menu + color picker). Mix channel drag-reorder via `moveTrack` (`session.ts:104-113`, `MixPage.tsx:31-46`).
+
+**AudioWorklet (first in the codebase).** `expanderWorklet.ts` — the Expander/Gate is a real `AudioWorkletProcessor` (Web Audio has no native expander). Source is a template string registered per-context via a Blob URL (`expanderWorklet.ts:55-63`), with params threshold/ratio/range/attack/release/hold/bypass; posts gain-reduction back to the main thread every 8 blocks for a meter (`expanderWorklet.ts:46-48`). Registered in `AudioEngine.ensureStarted()` **before** ctx is exposed, and also in `selfTest`'s offline ctx (`engine.ts:271, 641`). Wrapped by `createExpanderInsert` in `inserts.ts:111-144` (note the seconds→ms conversion, `inserts.ts:129-130`). EQ = 8 biquads + HPF/LPF (allpass when off, `inserts.ts:31-73`); Comp = `DynamicsCompressorNode` + makeup gain exposing `.reduction` (`inserts.ts:79-104`).
+
+**Master meter + transport.** `getMasterMeter()` returns real dBFS `{rms,peak}` from a master `AnalyserNode` (`engine.ts:299-317`); `MasterMeter.tsx` polls it via rAF in a leaf component (per contract) — never a hardcoded height. Transport proof = `startTestTone/stopTestTone` (220 Hz sine through master, `engine.ts:324-353`), toggled from the top bar (`App.tsx:40-46`, `session.ts:186-191`).
+
+**Theme system (art direction only).** `theme.ts` — `"hud"` (default, charcoal-glass/gold) vs `"fui"` (chamfered/heavy-shadow HUD chrome). Persisted to localStorage, applied as `data-theme` on `<html>`, keyed by `index.css` (which grew **+1172 lines**). FUI adds the cue-stack "north star" anatomy (index tabs, hero STANDBY readout, status table, footer) gated behind `fui &&` in `RunPage.tsx:112-182`. Explicitly "no functional effect" (`theme.ts:3`).
+
+**"see==hear" metering.** One analyser per channel taps `channelOut` — the same node feeding output — so on-screen meter/RTA equals the audible signal (`engine.ts:29-31, 62-73, 355-359`). Params are `setTargetAtTime`-smoothed ~10 ms for click-free live moves (`engine.ts:93-95`, `inserts.ts:21-23`).
+
+## Build Contract (`plan/03-BUILD-CONTRACT.md`) — locked rules
+- **The one rule** (`:7-12`): "A UI control **never changes its own state or appearance directly.**" It may only (1) dispatch an action mutating the single store, and (2) call an `AudioEngine` method; UI re-renders as a function of state. A handler doing `el.classList.toggle('on')` or holding its own `isOn` flag "is a **facade** and is rejected."
+- **Three layers** (`:13-22`): UI → action → **state store = `session.ts`** → calls → **AudioEngine = `engine.ts`** → real Web Audio; "Swapping to a native backend later = **zero UI changes.**"
+- **Definition of Done** (`:39-45`), every box true: state field, engine method that changes real audio (or a labeled throwing stub), control dispatches→state→engine, re-renders from state, teardown handled, and **"You can hear or measure it. If you can't perceive it, it isn't wired."**
+- **Adaptation** (`:47-55`): real-time signals (meters, playhead) read from engine via rAF in leaf components, **not** pushed into the store at 60 fps; undo/persistence deferred (architecture-first).
+- **Build order SC.1→SC.7** (`:56-65`), do not advance until DoD passes. Engine implements the contract's lifecycle aliases loosely (`init()` alias `engine.ts:287-289`; `now()` `:525`) but does **not** implement the full named interface (`play/pause/seek/createChannel/fireCue/bounceSelection/setHardwireBypass`, `:24-32`) or the throwing native-only stubs — a gap vs the contract spec.
+
+## PROGRESS.md — status board is STALE (flag).
+The `+20`-line diff only **added the SC.1–SC.7 rows and the SC.1/Build-Contract decision entries**; it was **not** updated for the SC.2 / Show-page / Routing / theme work that the code clearly contains. The board still reads **SC.2 "⬜ not started"**, SC.3 not started, and the "Current state of the code" narrative is dated 2026-07-01 and still claims "`Track.effects` is the currently-wired (but bypassed) path" and "Modeled-strip DSP is deferred" (`PROGRESS.md:37, 47-92, 170-172`) — both now false. **Ground-truth-per-PROGRESS convention (`:3`) is violated**; git history (not PROGRESS) is the accurate record. No change to Wave-2 plans (still Tauri+Rust, VST3/AU, Dante-SDK, `00-MASTER-PLAN.md:53-59`).
+
+## Corrected full picture (concise)
+- **Audio engine** (`engine.ts`, 711 lines): lazy `AudioContext` (post-gesture), master GainNode(0.9)→analyser→destination + worklet registration; per-track `TrackChain` with rebuildable insert middle and fixed head/tail; sub-mix bus summing; file playback, live input w/ device selection, `playArrangement` (equal-power crossfades, per-clip varispeed), `getPeaks` for waveforms, real per-channel + master meters, GR readouts, `selfTest`. Missing: bounce, hardwire-bypass, cue firing, multichannel capture, recording.
+- **Data/persistence**: in-memory observable store via `useSyncExternalStore` (`session.ts`); tracks + buses + selection + transport. Build layers/clips are still **local page state** (not in the store). No session save/load; only theme persists.
+- **State of code**: builds via `tsc -b && vite build`; no tests; no CI observed; dev exposes `window.__engine`. Clean UI→state→engine seam per contract.
+- **Docs**: `plan/00-02` + new `03-BUILD-CONTRACT.md` (governing), `CONVENTIONS.md`; `docs/ARCHITECTURE.md` superseded. CLAUDE.md updated only to reference the Build Contract (`CLAUDE.md` diff, +2 lines). README still describes old "Gain/EQ/Compression/Saturation" inserts (stale — "Saturation" was renamed to Expander).
+- **Suite references**: none. Standalone app; Avantis/Dante are hardware-modeling references only.
+
+Low-confidence flags: I did not exhaustively read the full `index.css` (+1172) beyond structure, `EqGraph`/`DynGraph` interaction internals, or `IoOverviewPage` changes; and I inferred the "Move tab" purely from Mix commit messages + `MixPage`/`ChannelStrip` DnD wiring (did not re-read `ChannelStrip.tsx` in full).
 
 ---
 
